@@ -31,9 +31,10 @@
 
 #include <sys/ioctl.h>
 
-#import "SmartKeys.h"
+#import "SmartKeysController.h"
 #import "SmartKeysView.h"
 #import "TermView.h"
+#import "BKUserConfigurationManager.h"
 
 static NSDictionary *CTRLCodes = nil;
 static NSDictionary *FModifiers = nil;
@@ -45,6 +46,7 @@ NSString *const TermViewCtrlSeq = @"ctrlSeq:";
 NSString *const TermViewEscSeq = @"escSeq:";
 NSString *const TermViewCursorFuncSeq = @"cursorSeq:";
 NSString *const TermViewFFuncSeq = @"fkeySeq:";
+NSString *const TermViewAutoRepeateSeq = @"autoRepeatSeq:";
 
 
 @interface CC : NSObject
@@ -179,24 +181,25 @@ NSString *const TermViewFFuncSeq = @"fkeySeq:";
 }
 @end
 
-@interface TerminalView () <UIKeyInput, UIGestureRecognizerDelegate, WKScriptMessageHandler>
+@interface TermView () <UIKeyInput, UIGestureRecognizerDelegate, WKScriptMessageHandler>
 @property UITapGestureRecognizer *tapBackground;
 @property UILongPressGestureRecognizer *longPressBackground;
 @property UIPinchGestureRecognizer *pinchGesture;
 @end
 
-@implementation TerminalView {
+@implementation TermView {
   WKWebView *_webView;
   // option + e on iOS lets introduce an accented character, that we override
   BOOL _disableAccents;
   BOOL _dismissInput;
   BOOL _pasteMenu;
-  NSMutableArray *_kbdCommands;
-  SmartKeys *_smartKeys;
+  NSMutableArray<UIKeyCommand *> *_kbdCommands;
+  SmartKeysController *_smartKeys;
   UIView *cover;
   NSTimer *_pinchSamplingTimer;
   BOOL _raw;
   BOOL _inputEnabled;
+  BOOL _cmdAsModifier;
   NSMutableDictionary *_controlKeys;
   NSMutableDictionary *_functionKeys;
   NSMutableDictionary *_functionTriggerKeys;
@@ -214,11 +217,19 @@ NSString *const TermViewFFuncSeq = @"fkeySeq:";
 
     [self addWebView];
     [self resetDefaultControlKeys];
-    [self addGestures];
-    [self configureNotifications];
   }
 
   return self;
+}
+
+- (void)didMoveToWindow
+{
+  [super didMoveToWindow];
+  
+  if (self.window && self.window.screen == [UIScreen mainScreen]) {
+    [self addGestures];
+    [self configureNotifications];
+  }
 }
 
 - (void)addWebView
@@ -239,24 +250,33 @@ NSString *const TermViewFFuncSeq = @"fkeySeq:";
 
 - (void)addGestures
 {
+  if (!_tapBackground) {
     _tapBackground = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(activeControl:)];
     [_tapBackground setNumberOfTapsRequired:1];
     _tapBackground.delegate = self;
     [self addGestureRecognizer:_tapBackground];
+  }
 
+  if (!_longPressBackground) {
     _longPressBackground = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(longPress:)];
     _longPressBackground.delegate = self;
     [self addGestureRecognizer:_longPressBackground];
+  }
 
+  if (!_pinchGesture) {
     _pinchGesture = [[UIPinchGestureRecognizer alloc] initWithTarget:self action:@selector(handlePinch:)];
     _pinchGesture.delegate = self;
     [self addGestureRecognizer:_pinchGesture];
+  }
 }
 
 - (void)configureNotifications
 {
-  [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(keyboardWillShow:) name:UIKeyboardWillShowNotification object:nil];
-  [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(keyboardWillHide:) name:UIKeyboardWillHideNotification object:nil];
+  NSNotificationCenter *defaultCenter = [NSNotificationCenter defaultCenter];
+  [defaultCenter removeObserver:self];
+  
+  [defaultCenter addObserver:self selector:@selector(keyboardWillShow:) name:UIKeyboardWillShowNotification object:nil];
+  [defaultCenter addObserver:self selector:@selector(keyboardWillHide:) name:UIKeyboardWillHideNotification object:nil];
 }
 
 - (void)resetDefaultControlKeys
@@ -341,6 +361,8 @@ NSString *const TermViewFFuncSeq = @"fkeySeq:";
 
   if ([operation isEqualToString:@"sigwinch"]) {
     if ([self.delegate respondsToSelector:@selector(updateTermRows:Cols:)]) {
+      self.rowCount = (int)[data[@"rows"]integerValue];
+      self.columnCount = (int)[data[@"columns"]integerValue];
       [self.delegate updateTermRows:data[@"rows"] Cols:data[@"columns"]];
     }
   } else if ([operation isEqualToString:@"terminalReady"]) {
@@ -392,7 +414,11 @@ NSString *const TermViewFFuncSeq = @"fkeySeq:";
 
   // If the intersection is only the accesoryView, we have a external keyboard
   if (intersection.size.height == [iaView frame].size.height) {
-    iaView.hidden = YES;
+    if ([BKUserConfigurationManager userSettingsValueForKey:BKUserConfigShowSmartKeysWithXKeyBoard]) {
+      iaView.hidden = NO;
+    } else {
+      iaView.hidden = YES;
+    }
   } else {
     //_capsMapped = NO;
     iaView.hidden = NO;
@@ -490,11 +516,11 @@ NSString *const TermViewFFuncSeq = @"fkeySeq:";
 {
   return YES;
 }
-
+  
 - (BOOL)becomeFirstResponder
 {
   if (!_smartKeys) {
-    _smartKeys = [[SmartKeys alloc] init];
+    _smartKeys = [[SmartKeysController alloc] init];
   }
 
   _smartKeys.textInputDelegate = self;
@@ -579,12 +605,23 @@ NSString *const TermViewFFuncSeq = @"fkeySeq:";
   [_webView evaluateJavaScript:jsScript completionHandler:nil];
 }
 
+- (void)setCursorBlink:(BOOL)state
+{
+  NSString *jsScript = [NSString stringWithFormat:@"setCursorBlink(%@)", state ? @"true" : @"false"];
+  [_webView evaluateJavaScript:jsScript completionHandler:nil];
+}
+
+- (void)reset
+{
+  [_webView evaluateJavaScript:@"reset" completionHandler:nil];
+}
+
 
 #pragma mark External Keyboard
-
 - (void)setKbdCommands
 {
   _kbdCommands = [NSMutableArray array];
+  
   [_kbdCommands addObjectsFromArray:self.presetShortcuts];
   for (NSNumber *modifier in _controlKeys.allKeys) {
     [_kbdCommands addObjectsFromArray:_controlKeys[modifier]];
@@ -608,8 +645,16 @@ NSString *const TermViewFFuncSeq = @"fkeySeq:";
       charset = @"qwertyuiopasdfghjklzxcvbnm[\\]^_ ";
     } else if (seq == TermViewEscSeq) {
       charset = @"qwertyuiopasdfghjklzxcvbnm1234567890`~-=_+[]\{}|;':\",./<>?/";
-    } else {
+    } else if (seq == TermViewAutoRepeateSeq){
+      charset = @"qwertyuiopasdfghjklzxcvbnm1234567890";
+    }
+    else {
       return;
+    }
+    
+    // Cmd is default for iOS shortcuts, so we control whether or not we are re-mapping those ourselves.
+    if (modifier == UIKeyModifierCommand) {
+      _cmdAsModifier = YES;
     }
 
     NSUInteger length = charset.length;
@@ -631,6 +676,10 @@ NSString *const TermViewFFuncSeq = @"fkeySeq:";
 
     [_controlKeys setObject:cmds forKey:[NSNumber numberWithInteger:modifier]];
   } else {
+    if (modifier == UIKeyModifierCommand) {
+      _cmdAsModifier = NO;
+    }
+
     [_controlKeys setObject:@[] forKey:[NSNumber numberWithInteger:modifier]];
   }
   [self setKbdCommands];
@@ -692,14 +741,20 @@ NSString *const TermViewFFuncSeq = @"fkeySeq:";
 - (NSArray *)presetShortcuts
 {
   return @[ [UIKeyCommand keyCommandWithInput:@"+"
-                                modifierFlags:UIKeyModifierCommand
-                                       action:@selector(increaseFontSize:)],
+                                modifierFlags:[BKUserConfigurationManager shortCutModifierFlags]
+                                       action:@selector(increaseFontSize:)
+             discoverabilityTitle:@"Zoom In"],
             [UIKeyCommand keyCommandWithInput:@"-"
-                                modifierFlags:UIKeyModifierCommand
-                                       action:@selector(decreaseFontSize:)],
-            [UIKeyCommand keyCommandWithInput:@"0"
-                                modifierFlags:UIKeyModifierCommand
-                                       action:@selector(resetFontSize:)] ];
+                                modifierFlags:[BKUserConfigurationManager shortCutModifierFlags]
+                                       action:@selector(decreaseFontSize:)
+             discoverabilityTitle:@"Zoom Out"],
+            [UIKeyCommand keyCommandWithInput:@"="
+                                modifierFlags:[BKUserConfigurationManager shortCutModifierFlags]
+                                       action:@selector(resetFontSize:)
+             discoverabilityTitle:@"Reset Zoom"],
+	    [UIKeyCommand keyCommandWithInput: @"v" modifierFlags: [BKUserConfigurationManager shortCutModifierFlags]
+                                          action: @selector(yank:)
+                            discoverabilityTitle: @"Paste"]];
 }
 
 - (NSArray *)functionModifierKeys
@@ -814,6 +869,14 @@ NSString *const TermViewFFuncSeq = @"fkeySeq:";
   }
 }
 
+- (void)autoRepeatSeq:(id)sender
+{
+  UIKeyCommand *command = (UIKeyCommand*)sender;
+  [_delegate write:command.input];
+}
+
+
+
 // This are all key commands capture by UIKeyInput and triggered
 // straight to the handler. A different firstresponder than UIKeyInput could
 // capture them, but we would not capture normal keys. We remap them
@@ -836,7 +899,7 @@ NSString *const TermViewFFuncSeq = @"fkeySeq:";
 // Cmd+v
 - (void)paste:(id)sender
 {
-  if ([sender isKindOfClass:[UIMenuController class]]) {
+  if ([sender isKindOfClass:[UIMenuController class]] || !_cmdAsModifier) {
     [self yank:sender];
   } else {
     [_delegate write:[CC CTRL:@"v"]];
@@ -872,8 +935,8 @@ NSString *const TermViewFFuncSeq = @"fkeySeq:";
     }
     return NO;
   }
-  // From the keyboard we validate everything
-  return YES;
+  
+  return [super canPerformAction:action withSender:sender];
 }
 
 @end

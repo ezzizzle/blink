@@ -31,20 +31,6 @@
 
 #import <UIKit/UIKit.h>
 
-#include "SmartKeysView.h"
-
-
-extern NSString *const SpecialCursorKeyHome;
-extern NSString *const SpecialCursorKeyEnd;
-extern NSString *const SpecialCursorKeyPgUp;
-extern NSString *const SpecialCursorKeyPgDown;
-
-@interface SmartKeys : UIViewController <SmartKeysDelegate>
-
-@property(nonatomic, weak) id< UIKeyInput > textInputDelegate;
-@property(strong, nonatomic) SmartKeysView *view;
-
--(void)symbolDown:(NSString *)symbol;
--(void)symbolUp:(NSString *)symbol;
+@interface BKDefaultUserViewController : UITableViewController
 
 @end

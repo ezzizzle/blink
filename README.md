@@ -28,13 +28,8 @@ We can't wait to receive your valuable feedback. Enjoy!
 We made a ton easier to build and install Blink yourself on your iOS devices through XCode. We provide a precompiled package with all the libraries for the master branch. Just extract this package in your Framework folder and build Blink.
 
 ```bash
-git clone git@github.com:blinksh/blink.git
-cd blink
-git submodule init
-git submodule update
-cd Frameworks
-curl -OL https://github.com/blinksh/blink/releases/download/v1.019/Blink-Frameworks.tar.gz
-tar -zxf Blink-Frameworks.tar.gz
+git clone --recursive git@github.com:blinksh/blink.git && \
+cd blink && ./get_frameworks.sh
 ```
 
 Although this is the quickest method to get you up and running, if you would like to compile all libraries and resources yourself, refer to [BUILD](https://github.com/blinksh/blink/blob/master/BUILD). Please let us know if you find any issues. Blink is a complex project with multiple low level dependencies and we are still looking for ways to simplify and automate the full compilation process.
@@ -52,23 +47,24 @@ Our UI is very straightforward and optimizes the experience on touch devices for
 - Ctrl and Alt modifiers at the SmartKeys bar allow for continuous presses, like in a real keyboard.
 
 # Changelog
-# Version 1.031
-	- NEW On-screen keyboard with more space for modifiers, FKeys and Cursor keys. Redesigned for more space on the modifiers, and with a central scrollable area that handles more keys. Activate the Alternate keys by taping on the Alt key. And now tap on a modifier to activate it as a normal button, or make a long press to chain different combinations.
-	- NEW Add your own Fonts & Themes! More info on (https://github.com/blinksh/fonts) and (https://github.com/blinksh/themes)
-	- NEW Multistep authentication. Servers with google authenticator or similar will now connect without problems :)
-	- NEW Fira Code font with ligatures included.
+# Version 3.021.2
+	- iCloud Hosts sync. Synchronize hosts between devices. If a Host already has been synced, it provides conflict resolution. No critical data like passwords is saved.
+	- Auto Lock. If enabled, when you lock/unlock your device, Blink will also be locked. Passcode and TouchID will be required to unlock the app.
+	- Added ARMv7 support. Support for 32 bit devices like iPad 2, 3, iPhone 5, etc... We will publish depending on how well it performs!
+	- Added IPv6 support for hosts.
+	- Share Public Encryption Keys. You can now share the public key from the Keys section to other apps, like Mail.
 
-	- Added -l parameter to ssh for Hosts.
-	- Improved message on how use hosts after adding them.
-	- Fixed on-screen arrows.
-	- Fixed F0 as F10 on external keyboard.
-	- Fixed keys selection problem on settings
-	- Fixed ssh-copy-id issue when accessing the host for the first time
+	- Updated Fira Code font to v1.204.
+	- Improved error checking on Themes and Font uploads. Auto correct if the GH URL is not a raw one.
+
+	- Fixed bug with password not getting saved on host creation
+	- Fixed crash when hitting arrows with landscape keyboard on Plus devices.
+	- Rolled back LC_CTYPE enforcement on server.
 
 [View all changes](CHANGELOG.md)
 
 # Attributions
-- [Mosh](https://mosh.mit.edu) was written by Keith Winstein, along with Anders Kaseorg, Quentin Smith, Richard Tibbetts, Keegan McAllister, and John Hood.
+- [Mosh](https://mosh.org) was written by Keith Winstein, along with Anders Kaseorg, Quentin Smith, Richard Tibbetts, Keegan McAllister, and John Hood.
 - This product includes software developed by the OpenSSL Project
 for use in the OpenSSL Toolkit. (http://www.openssl.org/).
 - [Libssh2](https://www.libssh2.org)
